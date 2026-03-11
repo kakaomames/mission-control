@@ -39,7 +39,10 @@ jobs:
 
       - name: 📥 ダウンロード実行
         run: |
-          yt-dlp "${{ env.TARGET_URL }}" -o "result_file.%(ext)s"
+          yt-dlp "${{ env.TARGET_URL }}" \
+          --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+          --extractor-args "youtube:player-client=android,web;ios" \
+          -o "result_file.%(ext)s"
 
       - name: 📦 格納庫（リポジトリB）へ輸送準備
         uses: actions/checkout@v4
