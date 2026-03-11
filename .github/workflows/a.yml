@@ -1,24 +1,21 @@
-name: yt-dlp Auto-Transport Mission
+name: Yt-dlp オートトランスポートミッション
 
 on:
   push:
     paths:
       - 'pending.json'
+  # これを追加することで、GitHubの画面から「ポチッ」と実行可能になります！
+  workflow_dispatch:
 
 jobs:
   mission-execute:
     runs-on: ubuntu-latest
-    # 二重起動による衝突を防ぐため、並列実行を制限
     concurrency: 
       group: mission-queue
       cancel-in-progress: false
 
     steps:
       - name: 🛰️ 拠点（リポジトリA）をチェックアウト
-        uses: actions/checkout@v4
-        with:
-          # ここを追加！
-          token: ${{ secrets.MY_GITHUB_TOKEN }}
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.MY_GITHUB_TOKEN }}
@@ -30,23 +27,22 @@ jobs:
           import json
           import os
 
-          # JSON読み込み
+          if not os.path.exists('pending.json'):
+              with open('pending.json', 'w') as f: f.write('[]')
+
           with open('pending.json', 'r', encoding='utf-8') as f:
               data = json.load(f)
 
           if not data:
               print("任務完了：待機中のURLはありません。")
-              exit(1) # URLがなければここで終了
+              exit(1)
 
-          # 先頭のURLを抽出して削除
           target = data.pop(0)
           url = target['url']
 
-          # 更新したJSONを保存
           with open('pending.json', 'w', encoding='utf-8') as f:
               json.dump(data, f, indent=2, ensure_ascii=False)
 
-          # 環境変数にセット
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write(f"TARGET_URL={url}\n")
           
@@ -59,7 +55,7 @@ jobs:
 
       - name: 📥 ダウンロード実行
         run: |
-          # 出力ファイル名を固定して扱いやすくする
+          # 拡張子を問わず取得できるように設定
           yt-dlp "${{ env.TARGET_URL }}" -o "result_file.%(ext)s"
 
       - name: 📦 格納庫（リポジトリB）へ輸送準備
@@ -71,35 +67,41 @@ jobs:
 
       - name: ⚖️ サイズ判定 & 自動仕分け輸送
         run: |
-          FILE_NAME=$(ls result_file.* | head -n 1)
-          FILE_SIZE=$(stat -c%s "$FILE_NAME")
+          # ファイル名を取得（ワイルドカード展開）
+          FILE_PATH=$(ls result_file.* | head -n 1)
+          FILE_NAME=$(basename "$FILE_PATH")
+          FILE_SIZE=$(stat -c%s "$FILE_PATH")
           THRESHOLD=100000000 # 100MB
           
           cd storage-repo
           git config user.name "Gemini Programming Unit"
           git config user.email "action@github.com"
           
-          # 成果物を移動
-          mv ../$FILE_NAME .
+          # ディレクトリがなければ作成
+          mkdir -p downloads
+          mv "../$FILE_PATH" "downloads/$FILE_NAME"
           
           if [ $FILE_SIZE -ge $THRESHOLD ]; then
               echo "🚨 100MB超過！LFSモードを起動します。"
+              # LFSをインストールして追跡
               git lfs install
-              git lfs track "*.mp4" "*.mkv" "*.webm"
+              git lfs track "downloads/*"
               git add .gitattributes
           else
               echo "✅ 100MB未満。通常モードで転送します。"
           fi
           
-          # keika.jsonの更新 (簡易版)
-          # 本来はここでもPythonを使うと綺麗ですが、一旦echoで追記
-          echo "{\"url\": \"${{ env.TARGET_URL }}\", \"file\": \"$FILE_NAME\", \"status\": \"done\"}" >> history.log
+          # 経過報告（keika.json）の更新
+          # JSONを安全に更新するために1行追記
+          TIMESTAMP=$(date +'%Y-%m-%d %H:%M:%S')
+          echo "{\"url\": \"${{ env.TARGET_URL }}\", \"file\": \"$FILE_NAME\", \"size\": \"$FILE_SIZE\", \"date\": \"$TIMESTAMP\"}" >> mission_log.json
 
           git add .
-          git commit -m "ACTION: $FILE_NAME を格納 (Size: $FILE_SIZE)"
+          git commit -m "ACTION: $FILE_NAME を格納 ($TIMESTAMP)"
           git push origin main
 
       - name: 🧹 司令塔（リポジトリA）のクリーンアップ
+        if: always() # ダウンロードに失敗してもJSONは更新する
         run: |
           git config user.name "Gemini Programming Unit"
           git config user.email "action@github.com"
