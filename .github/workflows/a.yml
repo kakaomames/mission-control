@@ -17,6 +17,10 @@ jobs:
       - name: 🛰️ 拠点（リポジトリA）をチェックアウト
         uses: actions/checkout@v4
         with:
+          # ここを追加！
+          token: ${{ secrets.MY_GITHUB_TOKEN }}
+        uses: actions/checkout@v4
+        with:
           token: ${{ secrets.MY_GITHUB_TOKEN }}
 
       - name: 🐍 URL抽出 & キュー更新 (Python)
