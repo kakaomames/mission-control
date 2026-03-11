@@ -39,6 +39,30 @@ jobs:
       - name: 🍪 Cookieの復元
         run: |
           echo "${{ secrets.YOUTUBE_COOKIES }}" > youtube_cookies.txt
+      
+      - name: ⚙️ Deno (JS Runtime) のインストール
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: 🍪 Cookieの復元
+        run: |
+          echo "${{ secrets.YOUTUBE_COOKIES }}" > youtube_cookie.txt
+
+      - name: 🚀 最新版 yt-dlp 配備
+        run: |
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: 📥 ダウンロード実行 (Deno + Cookie + Client調整)
+        run: |
+          yt-dlp "${{ env.TARGET_URL }}" \
+            --cookies youtube_cookies.txt \
+            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --extractor-args "youtube:player-client=web,android;ios" \
+            --no-check-certificates \
+            -o "result_file.%(ext)s"
+
 
       - name: 🚀 最新版 yt-dlp 配備
         run: |
