@@ -4,16 +4,19 @@ on:
   push:
     paths:
       - 'pending.json'
-  workflow_dispatch:
+  workflow_dispatch: # 「ポチッ」と実行ボタン用
 
 jobs:
   mission-execute:
     runs-on: ubuntu-latest
+    concurrency: 
+      group: mission-queue
+      cancel-in-progress: false
+
     steps:
       - name: 🛰️ 拠点（リポジトリA）をチェックアウト
         uses: actions/checkout@v4
         with:
-          # ここに確実にTokenを入れる
           token: ${{ secrets.MY_GITHUB_TOKEN }}
 
       - name: 🐍 URL抽出 & キュー更新 (Python)
@@ -21,6 +24,7 @@ jobs:
         shell: python
         run: |
           import json, os
+          if not os.path.exists('pending.json'): exit(1)
           with open('pending.json', 'r', encoding='utf-8') as f:
               data = json.load(f)
           if not data:
@@ -32,17 +36,21 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write(f"TARGET_URL={target['url']}\n")
 
+      - name: 🍪 Cookieの復元
+        run: |
+          echo "${{ secrets.YOUTUBE_COOKIES }}" > youtube_cookies.txt
+
       - name: 🚀 最新版 yt-dlp 配備
         run: |
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
-      - name: 📥 ダウンロード実行
+      - name: 📥 ダウンロード実行 (S25擬態モード)
         run: |
           yt-dlp "${{ env.TARGET_URL }}" \
-          --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-          --extractor-args "youtube:player-client=android,web;ios" \
-          -o "result_file.%(ext)s"
+            --cookies youtube_cookies.txt \
+            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            -o "result_file.%(ext)s"
 
       - name: 📦 格納庫（リポジトリB）へ輸送準備
         uses: actions/checkout@v4
@@ -57,28 +65,27 @@ jobs:
           FILE_NAME=$(basename "$FILE_PATH")
           FILE_SIZE=$(stat -c%s "$FILE_PATH")
           
-          # storage-repoの中に入って作業する
           cd storage-repo
           git config user.name "Gemini Programming Unit"
           git config user.email "action@github.com"
           mkdir -p downloads
           mv "../$FILE_PATH" "downloads/$FILE_NAME"
           
+          # 100MB（100,000,000バイト）判定
           if [ $FILE_SIZE -ge 100000000 ]; then
+              echo "🚨 100MB超過！LFSモードを起動します。"
               git lfs install
               git lfs track "downloads/*"
               git add .gitattributes
           fi
           
-          echo "{\"url\": \"${{ env.TARGET_URL }}\", \"file\": \"$FILE_NAME\"}" >> mission_log.json
           git add .
-          git commit -m "ACTION: $FILE_NAME 輸送完了"
+          git commit -m "ACTION: $FILE_NAME 輸送完了 (Size: $FILE_SIZE)"
           git push origin main
 
       - name: 🧹 司令塔（リポジトリA）のクリーンアップ
         if: always()
         run: |
-          # フォルダ移動で迷子にならないよう、明示的にディレクトリを指定！
           git config user.name "Gemini Programming Unit"
           git config user.email "action@github.com"
           git add pending.json
