@@ -1,0 +1,104 @@
+name: yt-dlp Auto-Transport Mission
+
+on:
+  push:
+    paths:
+      - 'pending.json'
+
+jobs:
+  mission-execute:
+    runs-on: ubuntu-latest
+    # 二重起動による衝突を防ぐため、並列実行を制限
+    concurrency: 
+      group: mission-queue
+      cancel-in-progress: false
+
+    steps:
+      - name: 🛰️ 拠点（リポジトリA）をチェックアウト
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.MY_GITHUB_TOKEN }}
+
+      - name: 🐍 URL抽出 & キュー更新 (Python)
+        id: extract
+        shell: python
+        run: |
+          import json
+          import os
+
+          # JSON読み込み
+          with open('pending.json', 'r', encoding='utf-8') as f:
+              data = json.load(f)
+
+          if not data:
+              print("任務完了：待機中のURLはありません。")
+              exit(1) # URLがなければここで終了
+
+          # 先頭のURLを抽出して削除
+          target = data.pop(0)
+          url = target['url']
+
+          # 更新したJSONを保存
+          with open('pending.json', 'w', encoding='utf-8') as f:
+              json.dump(data, f, indent=2, ensure_ascii=False)
+
+          # 環境変数にセット
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f"TARGET_URL={url}\n")
+          
+          print(f"DEBUG: 抽出URL = {url}")
+
+      - name: 🚀 最新版 yt-dlp 配備
+        run: |
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: 📥 ダウンロード実行
+        run: |
+          # 出力ファイル名を固定して扱いやすくする
+          yt-dlp "${{ env.TARGET_URL }}" -o "result_file.%(ext)s"
+
+      - name: 📦 格納庫（リポジトリB）へ輸送準備
+        uses: actions/checkout@v4
+        with:
+          repository: kakaomames/mission-storage
+          token: ${{ secrets.MY_GITHUB_TOKEN }}
+          path: storage-repo
+
+      - name: ⚖️ サイズ判定 & 自動仕分け輸送
+        run: |
+          FILE_NAME=$(ls result_file.* | head -n 1)
+          FILE_SIZE=$(stat -c%s "$FILE_NAME")
+          THRESHOLD=100000000 # 100MB
+          
+          cd storage-repo
+          git config user.name "Gemini Programming Unit"
+          git config user.email "action@github.com"
+          
+          # 成果物を移動
+          mv ../$FILE_NAME .
+          
+          if [ $FILE_SIZE -ge $THRESHOLD ]; then
+              echo "🚨 100MB超過！LFSモードを起動します。"
+              git lfs install
+              git lfs track "*.mp4" "*.mkv" "*.webm"
+              git add .gitattributes
+          else
+              echo "✅ 100MB未満。通常モードで転送します。"
+          fi
+          
+          # keika.jsonの更新 (簡易版)
+          # 本来はここでもPythonを使うと綺麗ですが、一旦echoで追記
+          echo "{\"url\": \"${{ env.TARGET_URL }}\", \"file\": \"$FILE_NAME\", \"status\": \"done\"}" >> history.log
+
+          git add .
+          git commit -m "ACTION: $FILE_NAME を格納 (Size: $FILE_SIZE)"
+          git push origin main
+
+      - name: 🧹 司令塔（リポジトリA）のクリーンアップ
+        run: |
+          git config user.name "Gemini Programming Unit"
+          git config user.email "action@github.com"
+          git add pending.json
+          git commit -m "CLEANUP: 処理済みURLを削除"
+          git push origin main
