@@ -60,15 +60,19 @@ jobs:
           pip install requests
           pip install curl_cffi
 
-      - name: 📥 ダウンロード実行 (S25回線・完全擬態モード)
+      - name: 🛰️ プロキシURL取得 (file.txt から)
         run: |
-          # プロキシを http:// として指定することで、HTTPSトンネル内の通信をより安定させます
+          # S25から届いた最新のServeo URLを読み込む
+          S25_PROXY=$(cat file.txt)
+          echo "DYNAMIC_PROXY=$S25_PROXY" >> $GITHUB_ENV
+
+      - name: 📥 ダウンロード実行 (S25プロキシ経由)
+        run: |
+          # secrets.PROXY_URL の代わりに、file.txt から抜いた dynamic_proxy を使う！
           yt-dlp "${{ env.TARGET_URL }}" \
-            --proxy "${{ secrets.PROXY_URL }}" \
+            --proxy "${{ env.DYNAMIC_PROXY }}" \
             --cookies youtube_cookies.txt \
             --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-            --no-check-certificates \
-            --prefer-free-formats \
             -o "result_file.%(ext)s"
 
 
