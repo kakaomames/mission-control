@@ -38,6 +38,7 @@ jobs:
 
       - name: 🍪 Cookieの復元
         run: |
+          cat file.txt > files.txt
           echo "${{ secrets.YOUTUBE_COOKIES }}" > youtube_cookies.txt
       
       - name: ⚙️ Deno (JS Runtime) のインストール
