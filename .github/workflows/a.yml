@@ -57,6 +57,7 @@ jobs:
       - name: 🐍 プロキシ対応用ライブラリのインストール
         run: |
           pip install requests
+          pip install curl_cffi
 
       - name: 📥 ダウンロード実行 (S25回線・完全擬態モード)
         run: |
